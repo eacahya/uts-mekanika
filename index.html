@@ -11,15 +11,22 @@
    PENGATURAN — ubah bagian ini sebelum ujian dibagikan
    ===================================================================== */
 const CONFIG = {
-  SCRIPT_URL: "",                 // URL Web App Google Apps Script (berakhiran /exec)
+  SCRIPT_URL: "https://script.google.com/macros/s/AKfycbyKkLt8ds1vLFn75-qfh-ih4Pe1HaIbx2aw_6Kqx62XK4tuOwQ2Ef_-x95XIRNhdA/exec",                 // URL Web App Google Apps Script (berakhiran /exec)
   EXAM_ID: "UTS-MEKANIKA-2026",    // ganti bila ujian diulang/susulan agar data tidak tercampur
   JUDUL: "Ujian Tengah Semester — Mekanika",
   KETERANGAN: "Pertemuan 1–7 · 40 soal pilihan ganda · 5 opsi",
-  DURASI_MENIT: 90,
+  KELAS: ["A", "B", "C"],          // pilihan kelas; kosongkan [] untuk isian bebas
+
+  // ---- Waktu ----
+  DURASI_MENIT: 90,                // lama pengerjaan per mahasiswa (menit)
+  JADWAL_BUKA: "",                 // kapan tombol Mulai bisa ditekan, mis. "2026-10-28T08:00" (kosong = kapan saja)
+  JADWAL_TUTUP: "",                // setelah waktu ini ujian tidak bisa dimulai/dilanjutkan dan jawaban terkirim otomatis, mis. "2026-10-28T10:00"
+
+  // ---- Pengawasan ----
+  MAKS_KELUAR: 3,                  // berapa kali boleh keluar halaman (pindah tab/aplikasi); lebih dari ini jawaban terkirim otomatis. 0 = hanya dicatat
   TOKEN: "",                       // kosongkan bila tidak memakai token; isi (mis. "MEK26") lalu umumkan di kelas
   ACAK_SOAL: true,
-  ACAK_OPSI: true,
-  KELAS: ["A", "B", "C", "D"]      // pilihan kelas; kosongkan [] untuk isian bebas
+  ACAK_OPSI: true
 };
 </script>
 <style>
@@ -155,7 +162,7 @@ h1{font-family:"Source Serif 4",Georgia,serif;font-size:clamp(24px,5vw,30px);lin
           <li>Waktu pengerjaan <b id="tDur"></b> menit, dihitung sejak tombol <i>Mulai</i> ditekan. Ujian otomatis terkirim saat waktu habis.</li>
           <li>Urutan soal dan opsi tiap mahasiswa berbeda.</li>
           <li>Jawaban tersimpan otomatis di perangkat. Jika halaman tertutup, buka kembali file yang sama dan masukkan NIM yang sama untuk melanjutkan.</li>
-          <li>Berpindah tab atau aplikasi selama ujian akan tercatat.</li>
+          <li id="tKeluar"></li>
           <li>Pastikan koneksi internet aktif saat menekan <i>Kumpulkan</i>.</li>
         </ul>
       </div>
@@ -221,6 +228,15 @@ h1{font-family:"Source Serif 4",Georgia,serif;font-size:clamp(24px,5vw,30px);lin
   </div>
 </section>
 
+<!-- ============ MODAL PERINGATAN KELUAR ============ -->
+<div class="modal hide" id="mWarn">
+  <div class="card">
+    <h1 style="font-size:22px;color:var(--danger)">Peringatan</h1>
+    <p id="wText"></p>
+    <div class="btnrow"><button class="primary" id="wOk">Saya mengerti, lanjutkan</button></div>
+  </div>
+</div>
+
 <!-- ============ MODAL KONFIRMASI ============ -->
 <div class="modal hide" id="mConfirm">
   <div class="card">
@@ -261,8 +277,15 @@ let cur = 0;       // current display index
 let tick = null;
 
 /* ---------- start screen ---------- */
+const BUKA = CONFIG.JADWAL_BUKA ? new Date(CONFIG.JADWAL_BUKA).getTime() : 0;
+const TUTUP = CONFIG.JADWAL_TUTUP ? new Date(CONFIG.JADWAL_TUTUP).getTime() : 0;
+const fmtJadwal = t => new Date(t).toLocaleString("id-ID", {weekday:"long", day:"numeric", month:"long", year:"numeric", hour:"2-digit", minute:"2-digit"});
 $("tJudul").textContent = CONFIG.JUDUL;
 $("tKet").textContent = CONFIG.KETERANGAN;
+if (BUKA || TUTUP) $("tKet").textContent = CONFIG.KETERANGAN + " · " + (BUKA ? "dibuka " + fmtJadwal(BUKA) : "") + (BUKA && TUTUP ? ", " : "") + (TUTUP ? "ditutup " + fmtJadwal(TUTUP) : "");
+$("tKeluar").textContent = CONFIG.MAKS_KELUAR > 0
+  ? "Keluar dari halaman ujian (pindah tab/aplikasi) maksimal " + CONFIG.MAKS_KELUAR + " kali. Lebih dari itu, jawaban otomatis dikumpulkan."
+  : "Berpindah tab atau aplikasi selama ujian akan tercatat.";
 $("tDur").textContent = CONFIG.DURASI_MENIT;
 if (CONFIG.TOKEN) $("tokenWrap").classList.remove("hide");
 if (!CONFIG.SCRIPT_URL) $("cfgWarn").classList.remove("hide");
@@ -278,7 +301,8 @@ function newState(nama, nim, kelas){
   SOAL.forEach(q => { optOrder[q.id] = CONFIG.ACAK_OPSI ? shuffle(LETTERS, r) : LETTERS.slice(); });
   const now = Date.now();
   return { v:1, subId: uid(), nama, nim, kelas, order, optOrder, jawab:{}, ragu:{},
-           mulai: now, akhir: now + CONFIG.DURASI_MENIT*60000, pindahTab: 0, terkirim: false, cur: 0 };
+           mulai: now, akhir: TUTUP ? Math.min(now + CONFIG.DURASI_MENIT*60000, TUTUP) : now + CONFIG.DURASI_MENIT*60000,
+           pindahTab: 0, terkirim: false, cur: 0 };
 }
 function save(){ if (S){ S.cur = cur; store.set(keyFor(S.nim), S); } }
 
@@ -292,6 +316,8 @@ $("fStart").addEventListener("submit", ev => {
   if (!/^[0-9A-Za-z.\-]{4,20}$/.test(nim)) return err.textContent = "NIM belum valid.";
   if (!kelas) return err.textContent = "Pilih atau isi kelas.";
   if (CONFIG.TOKEN && $("iToken").value.trim().toUpperCase() !== CONFIG.TOKEN.toUpperCase()) return err.textContent = "Token ujian salah.";
+  if (BUKA && Date.now() < BUKA) return err.textContent = "Ujian belum dibuka. Dibuka pada " + fmtJadwal(BUKA) + ".";
+  if (TUTUP && Date.now() >= TUTUP && !store.get(keyFor(nim))) return err.textContent = "Ujian sudah ditutup pada " + fmtJadwal(TUTUP) + ".";
   const saved = store.get(keyFor(nim));
   if (saved && saved.terkirim){ S = saved; return showEnd(true); }
   S = (saved && saved.v === 1) ? saved : newState(nama, nim, kelas);
@@ -325,8 +351,24 @@ function startExam(){
 function warnUnload(e){ if (S && !S.terkirim){ e.preventDefault(); e.returnValue = ""; } }
 function onVis(){
   if (document.hidden && S && !S.terkirim && $("scrExam").offsetParent !== null){
-    S.pindahTab++; save(); $("tabWarn").textContent = "Tercatat berpindah tab/aplikasi: " + S.pindahTab + " kali.";
+    S.pindahTab++; save(); showLeave();
+    if (CONFIG.MAKS_KELUAR > 0 && S.pindahTab > CONFIG.MAKS_KELUAR){ $("mConfirm").classList.add("hide"); submit("melebihi batas keluar halaman"); }
   }
+}
+function showLeave(){
+  if (!S.pindahTab) return;
+  const t = $("tabWarn");
+  if (CONFIG.MAKS_KELUAR > 0){
+    const sisa = CONFIG.MAKS_KELUAR - S.pindahTab;
+    t.textContent = "Keluar halaman: " + S.pindahTab + "/" + CONFIG.MAKS_KELUAR + " kali." + (sisa >= 0 ? (sisa === 0 ? " Sekali lagi keluar, jawaban otomatis dikumpulkan." : "") : "");
+    if (sisa >= 0) alertLeave(sisa);
+  } else t.textContent = "Tercatat berpindah tab/aplikasi: " + S.pindahTab + " kali.";
+}
+function alertLeave(sisa){
+  $("wText").textContent = sisa === 0
+    ? "Anda sudah mencapai batas keluar halaman. Jika keluar sekali lagi, jawaban akan otomatis dikumpulkan."
+    : "Anda tercatat keluar dari halaman ujian (" + S.pindahTab + " dari " + CONFIG.MAKS_KELUAR + " kali yang diizinkan). Sisa kesempatan: " + sisa + ".";
+  $("mWarn").classList.remove("hide");
 }
 function buildGrid(){
   const g = $("navGrid"); g.innerHTML = "";
@@ -336,7 +378,7 @@ function buildGrid(){
     b.onclick = () => { cur = k; save(); render(); window.scrollTo({top:0, behavior:"smooth"}); };
     g.appendChild(b);
   });
-  if (S.pindahTab) $("tabWarn").textContent = "Tercatat berpindah tab/aplikasi: " + S.pindahTab + " kali.";
+  if (S.pindahTab){ const t=$("tabWarn"); t.textContent = CONFIG.MAKS_KELUAR > 0 ? "Keluar halaman: " + S.pindahTab + "/" + CONFIG.MAKS_KELUAR + " kali." : "Tercatat berpindah tab/aplikasi: " + S.pindahTab + " kali."; }
 }
 function render(){
   const id = S.order[cur], q = QMAP[id];
@@ -369,7 +411,7 @@ $("cFlag").onchange = e => { const id = S.order[cur]; if (e.target.checked) S.ra
 $("bPrev").onclick = () => { if (cur>0){ cur--; save(); render(); window.scrollTo({top:0,behavior:"smooth"}); } };
 $("bNext").onclick = () => { if (cur < S.order.length-1){ cur++; save(); render(); window.scrollTo({top:0,behavior:"smooth"}); } else askSubmit(); };
 document.addEventListener("keydown", e => {
-  if ($("scrExam").classList.contains("hide") || !$("mConfirm").classList.contains("hide")) return;
+  if ($("scrExam").classList.contains("hide") || !$("mConfirm").classList.contains("hide") || !$("mWarn").classList.contains("hide")) return;
   if (["INPUT","SELECT","TEXTAREA"].includes(document.activeElement.tagName)) return;
   if (e.key === "ArrowRight") $("bNext").click();
   if (e.key === "ArrowLeft") $("bPrev").click();
@@ -394,6 +436,7 @@ function askSubmit(){
 }
 $("bSubmit").onclick = askSubmit;
 $("mNo").onclick = () => $("mConfirm").classList.add("hide");
+$("wOk").onclick = () => $("mWarn").classList.add("hide");
 $("mYes").onclick = () => { $("mConfirm").classList.add("hide"); submit("dikumpulkan"); };
 
 function payload(){
@@ -432,12 +475,12 @@ async function send(data){
   }
 }
 function showEnd(ok){
-  $("scrStart").classList.add("hide"); $("scrExam").classList.add("hide"); $("scrEnd").classList.remove("hide");
+  $("scrStart").classList.add("hide"); $("scrExam").classList.add("hide"); $("scrEnd").classList.remove("hide"); $("mWarn").classList.add("hide");
   window.removeEventListener("beforeunload", warnUnload);
   const n = Object.keys(S.jawab).length;
   $("sAns").textContent = n; $("sEmpty").textContent = S.order.length - n;
   $("sDur").textContent = Math.round(((S.selesai || Date.now()) - S.mulai)/60000);
-  $("eSub").textContent = S.nama + " · NIM " + S.nim + " · Kelas " + S.kelas + (S.alasan === "waktu habis" ? " · dikirim otomatis karena waktu habis" : "");
+  $("eSub").textContent = S.nama + " · NIM " + S.nim + " · Kelas " + S.kelas + (S.alasan && S.alasan !== "dikumpulkan" ? " · dikirim otomatis: " + S.alasan : "");
   $("bRetry").classList.add("hide"); $("bBackup").classList.add("hide"); $("bHome").classList.add("hide");
   if (ok === null){ $("eTitle").textContent = "Mengirim jawaban…"; $("eStatus").innerHTML = '<span class="spinner"></span>Jangan tutup halaman ini.'; return; }
   if (ok === "demo"){ $("eTitle").textContent = "Mode uji coba"; $("eStatus").textContent = "SCRIPT_URL belum diisi, jadi jawaban tidak dikirim. Unduh berkas cadangan untuk melihat data yang akan dikirim."; $("bBackup").classList.remove("hide"); $("bHome").classList.remove("hide"); return; }
