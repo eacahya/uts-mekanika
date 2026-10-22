@@ -24,7 +24,7 @@ const CONFIG = {
 
   // ---- Pengawasan ----
   MAKS_KELUAR: 3,                  // berapa kali boleh keluar halaman (pindah tab/aplikasi); lebih dari ini jawaban terkirim otomatis. 0 = hanya dicatat
-  TOKEN: "",                       // kosongkan bila tidak memakai token; isi (mis. "MEK26") lalu umumkan di kelas
+  PAKAI_TOKEN: true,               // true = mahasiswa wajib memasukkan token. Token-nya diketik di spreadsheet (sheet "Pengaturan", sel B2), bukan di sini
   ACAK_SOAL: true,
   ACAK_OPSI: true
 };
@@ -256,6 +256,7 @@ const SOAL = [{"id": 1, "topik": "Vektor", "soal": "Kelompok besaran berikut yan
 <script>
 (function(){
 const $ = id => document.getElementById(id);
+const VIA_GAS = typeof google !== "undefined" && google.script && google.script.run;   // halaman disajikan oleh Apps Script
 const LETTERS = ["A","B","C","D","E"];
 const store = {
   get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } },
@@ -287,8 +288,8 @@ $("tKeluar").textContent = CONFIG.MAKS_KELUAR > 0
   ? "Keluar dari halaman ujian (pindah tab/aplikasi) maksimal " + CONFIG.MAKS_KELUAR + " kali. Lebih dari itu, jawaban otomatis dikumpulkan."
   : "Berpindah tab atau aplikasi selama ujian akan tercatat.";
 $("tDur").textContent = CONFIG.DURASI_MENIT;
-if (CONFIG.TOKEN) $("tokenWrap").classList.remove("hide");
-if (!CONFIG.SCRIPT_URL) $("cfgWarn").classList.remove("hide");
+if (CONFIG.PAKAI_TOKEN) $("tokenWrap").classList.remove("hide");
+if (!CONFIG.SCRIPT_URL && !(typeof google !== "undefined" && google.script && google.script.run)) $("cfgWarn").classList.remove("hide");
 $("kelasWrap").innerHTML = CONFIG.KELAS && CONFIG.KELAS.length
   ? '<select id="iKelas" required><option value="">— pilih —</option>' + CONFIG.KELAS.map(k=>`<option>${esc(k)}</option>`).join("") + "</select>"
   : '<input id="iKelas" required maxlength="20">';
@@ -306,7 +307,17 @@ function newState(nama, nim, kelas){
 }
 function save(){ if (S){ S.cur = cur; store.set(keyFor(S.nim), S); } }
 
-$("fStart").addEventListener("submit", ev => {
+/* token diperiksa di server (Apps Script), sehingga tidak terlihat di kode halaman */
+function cekTokenServer(token){
+  if (VIA_GAS) return new Promise(res => google.script.run
+      .withSuccessHandler(r => res(r || {ok:false, pesan:"Respon server kosong."}))
+      .withFailureHandler(() => res({ok:false, pesan:"Tidak dapat menghubungi server. Periksa koneksi internet."}))
+      .cekToken(token));
+  if (!CONFIG.SCRIPT_URL) return Promise.resolve({ok:true});           // mode uji coba
+  return fetch(CONFIG.SCRIPT_URL, { method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body: JSON.stringify({aksi:"cekToken", token}) })
+    .then(r => r.json()).catch(() => ({ok:false, pesan:"Tidak dapat menghubungi server. Periksa koneksi internet."}));
+}
+$("fStart").addEventListener("submit", async ev => {
   ev.preventDefault();
   const nama = $("iNama").value.trim().replace(/\s+/g," ");
   const nim = $("iNim").value.trim().replace(/\s+/g,"");
@@ -315,11 +326,18 @@ $("fStart").addEventListener("submit", ev => {
   if (nama.length < 3) return err.textContent = "Nama belum diisi dengan benar.";
   if (!/^[0-9A-Za-z.\-]{4,20}$/.test(nim)) return err.textContent = "NIM belum valid.";
   if (!kelas) return err.textContent = "Pilih atau isi kelas.";
-  if (CONFIG.TOKEN && $("iToken").value.trim().toUpperCase() !== CONFIG.TOKEN.toUpperCase()) return err.textContent = "Token ujian salah.";
   if (BUKA && Date.now() < BUKA) return err.textContent = "Ujian belum dibuka. Dibuka pada " + fmtJadwal(BUKA) + ".";
   if (TUTUP && Date.now() >= TUTUP && !store.get(keyFor(nim))) return err.textContent = "Ujian sudah ditutup pada " + fmtJadwal(TUTUP) + ".";
   const saved = store.get(keyFor(nim));
   if (saved && saved.terkirim){ S = saved; return showEnd(true); }
+  if (CONFIG.PAKAI_TOKEN && !saved){                        // melanjutkan ujian tidak perlu token lagi
+    const btn = ev.submitter || document.querySelector("#fStart button[type=submit]");
+    if (!$("iToken").value.trim()) return err.textContent = "Masukkan token ujian dari pengawas.";
+    btn.disabled = true; err.textContent = ""; btn.textContent = "Memeriksa token…";
+    const r = await cekTokenServer($("iToken").value.trim());
+    btn.disabled = false; btn.textContent = "Mulai ujian";
+    if (!r.ok) return err.textContent = r.pesan || "Token ujian salah.";
+  }
   S = (saved && saved.v === 1) ? saved : newState(nama, nim, kelas);
   if (!saved){ S.nama = nama; S.kelas = kelas; }
   store.set(KEY_ACTIVE, nim);
@@ -459,7 +477,16 @@ async function submit(alasan){
   if (ok){ S.terkirim = true; S.kirimGagal = false; } else S.kirimGagal = true;
   save(); showEnd(ok);
 }
+function sendGas(data){
+  return new Promise(resolve => {
+    google.script.run
+      .withSuccessHandler(r => resolve(r && r.ok ? "confirmed" : false))
+      .withFailureHandler(() => resolve(false))
+      .kirimJawaban(data);
+  });
+}
 async function send(data){
+  if (VIA_GAS) return sendGas(data);
   if (!CONFIG.SCRIPT_URL){ await new Promise(r=>setTimeout(r,600)); return "demo"; }
   const body = JSON.stringify(data);
   try {   // 1) normal request: lets us read the server's confirmation
