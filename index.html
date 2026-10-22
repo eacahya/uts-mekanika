@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UTS Mekanika</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:wght@400;600&display=swap" rel="stylesheet">
+<script>
+/* =====================================================================
+   PENGATURAN — ubah bagian ini sebelum ujian dibagikan
+   ===================================================================== */
+const CONFIG = {
+  SCRIPT_URL: "",                 // URL Web App Google Apps Script (berakhiran /exec)
+  EXAM_ID: "UTS-MEKANIKA-2026",    // ganti bila ujian diulang/susulan agar data tidak tercampur
+  JUDUL: "Ujian Tengah Semester — Mekanika",
+  KETERANGAN: "Pertemuan 1–7 · 40 soal pilihan ganda · 5 opsi",
+  DURASI_MENIT: 90,
+  TOKEN: "",                       // kosongkan bila tidak memakai token; isi (mis. "MEK26") lalu umumkan di kelas
+  ACAK_SOAL: true,
+  ACAK_OPSI: true,
+  KELAS: ["A", "B", "C", "D"]      // pilihan kelas; kosongkan [] untuk isian bebas
+};
+</script>
+<style>
+:root{
+  --bg:#f5f4f0; --surface:#ffffff; --ink:#1f2328; --muted:#5d6570; --line:#dedad0;
+  --accent:#1f5f8b; --accent-soft:#e4eff7; --warm:#b5542c; --warm-soft:#fbeee7;
+  --green:#2e7d4f; --green-soft:#e6f3ea; --gold:#a07a12; --gold-soft:#fbf3d9; --danger:#b3261e;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#141619; --surface:#1d2024; --ink:#e7e9ec; --muted:#a1a8b2; --line:#30343a;
+    --accent:#6fb1e0; --accent-soft:#1c2b37; --warm:#ec976f; --warm-soft:#33241e;
+    --green:#7cc79a; --green-soft:#1d2e24; --gold:#e0c060; --gold-soft:#332b12; --danger:#f2867d;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141619; --surface:#1d2024; --ink:#e7e9ec; --muted:#a1a8b2; --line:#30343a;
+  --accent:#6fb1e0; --accent-soft:#1c2b37; --warm:#ec976f; --warm-soft:#33241e;
+  --green:#7cc79a; --green-soft:#1d2e24; --gold:#e0c060; --gold-soft:#332b12; --danger:#f2867d;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:Inter,system-ui,sans-serif;font-size:16px;line-height:1.5;overflow-x:hidden}
+.hide{display:none!important}
+button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:10px 16px}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button.danger{background:var(--danger);border-color:var(--danger);color:#fff;font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+input,select{font:inherit;width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+label.f{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:14px 0 6px}
+
+/* start + end screens */
+.center{min-height:100vh;display:grid;place-items:center;padding:24px 16px}
+.card{width:100%;max-width:560px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:26px}
+.kicker{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--warm);font-weight:700}
+h1{font-family:"Source Serif 4",Georgia,serif;font-size:clamp(24px,5vw,30px);line-height:1.2;margin:6px 0 4px}
+.sub{color:var(--muted);margin:0 0 6px}
+.rules{background:var(--accent-soft);border-radius:12px;padding:12px 16px;margin:16px 0 4px;font-size:14px}
+.rules ul{margin:6px 0 0;padding-left:18px}
+.rules li{margin:3px 0}
+.err{color:var(--danger);font-size:14px;margin:10px 0 0;min-height:20px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.cfgwarn{background:var(--gold-soft);color:var(--ink);border-radius:10px;padding:10px 12px;font-size:13px;margin-top:12px}
+
+/* exam */
+.topbar{position:sticky;top:0;z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.topin{max-width:1100px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.who{flex:1;min-width:0}
+.who b,.who span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.who b{display:block;font-size:15px;line-height:1.2}
+.who span{font-size:12px;color:var(--muted)}
+.timer{font-variant-numeric:tabular-nums;font-weight:700;font-size:20px;padding:6px 12px;border-radius:10px;background:var(--accent-soft);color:var(--accent)}
+.timer.warn{background:var(--warm-soft);color:var(--warm)}
+.timer.crit{background:var(--danger);color:#fff}
+.prog{font-size:13px;color:var(--muted);white-space:nowrap}
+.bar{height:4px;background:var(--line)}
+.bar i{display:block;height:100%;background:var(--green);width:0;transition:width .2s}
+.layout{max-width:1100px;margin:0 auto;padding:18px 16px 40px;display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:18px;align-items:start}
+.qcard{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px}
+.qmeta{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.qno{font-weight:700;font-size:15px}
+.topic{font-size:12px;color:var(--muted);background:var(--bg);padding:3px 10px;border-radius:999px}
+.stem{font-family:"Source Serif 4",Georgia,serif;font-size:19px;line-height:1.6;margin:0 0 16px}
+.opts{display:flex;flex-direction:column;gap:10px}
+.opt{display:flex;gap:12px;align-items:flex-start;text-align:left;width:100%;padding:12px 14px;border-radius:12px;border:1.5px solid var(--line);background:var(--bg);font-size:16px;line-height:1.5}
+.opt:hover{border-color:var(--accent)}
+.opt .L{flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:14px;background:var(--surface);border:1.5px solid var(--line)}
+.opt.on{border-color:var(--accent);background:var(--accent-soft)}
+.opt.on .L{background:var(--accent);border-color:var(--accent);color:#fff}
+.qnav{display:flex;justify-content:space-between;gap:10px;margin-top:18px;flex-wrap:wrap;align-items:center}
+.flag{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted);cursor:pointer;user-select:none}
+.flag input{width:18px;height:18px;accent-color:var(--gold)}
+.side{position:sticky;top:84px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px}
+.side h3{margin:0 0 10px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.grid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
+.grid button{padding:0;height:34px;border-radius:8px;font-size:13px;font-weight:600;background:var(--bg)}
+.grid button.ans{background:var(--green);border-color:var(--green);color:#fff}
+.grid button.flg{background:var(--gold);border-color:var(--gold);color:#1f2328}
+.grid button.cur{outline:2.5px solid var(--accent);outline-offset:1px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:12px;color:var(--muted);margin:12px 0}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:-1px;border:1px solid var(--line)}
+.tabwarn{font-size:12px;color:var(--warm);margin-top:8px;min-height:16px}
+
+/* modal */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:grid;place-items:center;padding:16px;z-index:20}
+.modal .card{max-width:440px}
+.modal p{margin:8px 0}
+.btnrow{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap}
+
+.ok{color:var(--green);font-weight:700}
+.spinner{display:inline-block;width:18px;height:18px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-4px;margin-right:8px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0}
+.summary div{background:var(--bg);border-radius:10px;padding:10px;text-align:center}
+.summary b{display:block;font-size:22px}
+.summary span{font-size:12px;color:var(--muted)}
+
+@media (max-width:860px){
+  .layout{grid-template-columns:minmax(0,1fr)}
+  .side{position:static;order:2}
+  .grid{grid-template-columns:repeat(10,1fr)}
+}
+@media (max-width:480px){
+  .topin{flex-wrap:nowrap;gap:10px}
+  .prog{font-size:12px}
+  .timer{font-size:17px;padding:5px 9px}
+  .grid{grid-template-columns:repeat(8,1fr)}
+  .row2{grid-template-columns:1fr}
+  .stem{font-size:17.5px}
+  .qcard{padding:16px}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ LAYAR MASUK ============ -->
+<section id="scrStart" class="center">
+  <div class="card">
+    <div class="kicker">Pendidikan Fisika · Mekanika</div>
+    <h1 id="tJudul"></h1>
+    <p class="sub" id="tKet"></p>
+    <form id="fStart" autocomplete="on">
+      <label class="f" for="iNama">Nama lengkap</label>
+      <input id="iNama" required maxlength="80" placeholder="sesuai daftar hadir">
+      <div class="row2">
+        <div><label class="f" for="iNim">NIM</label><input id="iNim" required inputmode="numeric" maxlength="20" placeholder="contoh: 1222070001"></div>
+        <div><label class="f" for="iKelas">Kelas</label><div id="kelasWrap"></div></div>
+      </div>
+      <div id="tokenWrap" class="hide"><label class="f" for="iToken">Token ujian</label><input id="iToken" maxlength="20" placeholder="diumumkan oleh pengawas"></div>
+      <div class="rules">
+        <b>Tata tertib</b>
+        <ul>
+          <li>Waktu pengerjaan <b id="tDur"></b> menit, dihitung sejak tombol <i>Mulai</i> ditekan. Ujian otomatis terkirim saat waktu habis.</li>
+          <li>Urutan soal dan opsi tiap mahasiswa berbeda.</li>
+          <li>Jawaban tersimpan otomatis di perangkat. Jika halaman tertutup, buka kembali file yang sama dan masukkan NIM yang sama untuk melanjutkan.</li>
+          <li>Berpindah tab atau aplikasi selama ujian akan tercatat.</li>
+          <li>Pastikan koneksi internet aktif saat menekan <i>Kumpulkan</i>.</li>
+        </ul>
+      </div>
+      <p class="err" id="startErr"></p>
+      <button class="primary" type="submit" style="width:100%">Mulai ujian</button>
+      <div id="cfgWarn" class="cfgwarn hide">Mode uji coba: alamat Apps Script (<code>SCRIPT_URL</code>) belum diisi. Jawaban tidak akan terkirim ke spreadsheet.</div>
+    </form>
+  </div>
+</section>
+
+<!-- ============ LAYAR UJIAN ============ -->
+<section id="scrExam" class="hide">
+  <div class="topbar">
+    <div class="topin">
+      <div class="who"><b id="hNama"></b><span id="hInfo"></span></div>
+      <div class="prog" id="hProg"></div>
+      <div class="timer" id="hTimer" title="Sisa waktu">--:--</div>
+    </div>
+    <div class="bar"><i id="hBar"></i></div>
+  </div>
+  <div class="layout">
+    <main class="qcard" id="qcard">
+      <div class="qmeta"><span class="qno" id="qNo"></span><span class="topic" id="qTopic"></span></div>
+      <p class="stem" id="qStem"></p>
+      <div class="opts" id="qOpts" role="radiogroup"></div>
+      <div class="qnav">
+        <button id="bPrev">← Sebelumnya</button>
+        <label class="flag"><input type="checkbox" id="cFlag"> Ragu-ragu</label>
+        <button id="bNext" class="primary">Berikutnya →</button>
+      </div>
+    </main>
+    <aside class="side">
+      <h3>Navigasi soal</h3>
+      <div class="grid" id="navGrid"></div>
+      <div class="legend">
+        <span><i style="background:var(--green);border-color:var(--green)"></i>terjawab</span>
+        <span><i style="background:var(--gold);border-color:var(--gold)"></i>ragu-ragu</span>
+        <span><i></i>belum</span>
+      </div>
+      <button class="danger" id="bSubmit" style="width:100%">Kumpulkan jawaban</button>
+      <div class="tabwarn" id="tabWarn"></div>
+    </aside>
+  </div>
+</section>
+
+<!-- ============ LAYAR SELESAI ============ -->
+<section id="scrEnd" class="center hide">
+  <div class="card">
+    <div class="kicker">Ujian selesai</div>
+    <h1 id="eTitle">Mengirim jawaban…</h1>
+    <p class="sub" id="eSub"></p>
+    <div class="summary">
+      <div><b id="sAns">0</b><span>terjawab</span></div>
+      <div><b id="sEmpty">0</b><span>kosong</span></div>
+      <div><b id="sDur">0</b><span>menit</span></div>
+    </div>
+    <p id="eStatus"></p>
+    <div class="btnrow" style="justify-content:flex-start">
+      <button class="primary hide" id="bRetry">Kirim ulang</button>
+      <button class="hide" id="bBackup">Unduh berkas cadangan</button>
+      <button class="hide" id="bHome">Kembali ke halaman awal</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ MODAL KONFIRMASI ============ -->
+<div class="modal hide" id="mConfirm">
+  <div class="card">
+    <h1 style="font-size:22px">Kumpulkan jawaban?</h1>
+    <p id="mText"></p>
+    <p style="color:var(--muted);font-size:14px">Setelah dikumpulkan, jawaban tidak dapat diubah lagi.</p>
+    <div class="btnrow">
+      <button id="mNo">Periksa lagi</button>
+      <button class="danger" id="mYes">Ya, kumpulkan</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SOAL = [{"id": 1, "topik": "Vektor", "soal": "Kelompok besaran berikut yang <em>semuanya</em> merupakan besaran vektor adalah …", "opsi": {"A": "massa, gaya, kecepatan", "B": "laju, percepatan, energi", "C": "usaha, torsi, impuls", "D": "suhu, medan listrik, kecepatan", "E": "perpindahan, gaya, momentum"}}, {"id": 2, "topik": "Vektor", "soal": "Diketahui <b>A</b> = 3<b>i</b> + 4<b>j</b> dan <b>B</b> = <b>i</b> − 2<b>j</b> + 2<b>k</b>. Nilai <b>A</b>·<b>B</b> adalah …", "opsi": {"A": "5", "B": "−11", "C": "−5", "D": "11", "E": "0"}}, {"id": 3, "topik": "Vektor", "soal": "Diketahui <b>A</b> = <b>i</b> + <b>j</b> dan <b>B</b> = <b>j</b> + <b>k</b>. Hasil <b>A</b> × <b>B</b> adalah …", "opsi": {"A": "<b>i</b> − <b>j</b> + <b>k</b>", "B": "<b>i</b> + <b>j</b> + <b>k</b>", "C": "−<b>i</b> + <b>j</b> − <b>k</b>", "D": "<b>i</b> − <b>k</b>", "E": "0 (vektor nol)"}}, {"id": 4, "topik": "Vektor", "soal": "Sudut antara vektor <b>A</b> = <b>i</b> + <b>j</b> dan <b>B</b> = <b>i</b> + <b>k</b> adalah …", "opsi": {"A": "30°", "B": "60°", "C": "45°", "D": "90°", "E": "120°"}}, {"id": 5, "topik": "Vektor", "soal": "Posisi partikel <b>r</b>(t) = R(cos ωt <b>i</b> + sin ωt <b>j</b>) dengan R dan ω konstan. Percepatannya adalah …", "opsi": {"A": "<b>a</b> = 0 karena lajunya konstan", "B": "<b>a</b> = ω<b>r</b>, menyinggung lintasan", "C": "<b>a</b> = −ω²<b>r</b>, mengarah ke pusat lingkaran", "D": "<b>a</b> = ω²<b>r</b>, menjauhi pusat lingkaran", "E": "<b>a</b> = −ω<b>r</b>, mengarah ke pusat lingkaran"}}, {"id": 6, "topik": "Newton: gerak lurus (1)", "soal": "Sebuah benda bergerak lurus dengan kecepatan konstan. Menurut Hukum I Newton, …", "opsi": {"A": "ada gaya konstan yang searah gerak", "B": "tidak ada satu pun gaya yang bekerja pada benda", "C": "resultan gaya sebanding dengan kecepatannya", "D": "resultan gaya pada benda sama dengan nol", "E": "massa benda berkurang terhadap waktu"}}, {"id": 7, "topik": "Newton: gerak lurus (1)", "soal": "Kerangka acuan berikut yang dapat dianggap sebagai kerangka acuan inersial adalah …", "opsi": {"A": "mobil yang sedang mengerem", "B": "komidi putar yang berputar dengan laju tetap", "C": "lift yang dipercepat ke atas", "D": "pesawat yang sedang lepas landas", "E": "kereta yang melaju lurus dengan kecepatan tetap"}}, {"id": 8, "topik": "Newton: gerak lurus (1)", "soal": "Balok 2,0 kg mula-mula diam di lantai licin, lalu ditarik gaya horizontal tetap 10 N. Jarak yang ditempuh setelah 4,0 s adalah …", "opsi": {"A": "40 m", "B": "10 m", "C": "20 m", "D": "80 m", "E": "160 m"}}, {"id": 9, "topik": "Newton: gerak lurus (1)", "soal": "Sebuah balok meluncur pada bidang miring licin dengan sudut kemiringan 30° (g = 9,8 m/s²). Percepatan balok adalah …", "opsi": {"A": "2,45 m/s²", "B": "8,5 m/s²", "C": "9,8 m/s²", "D": "4,9 m/s²", "E": "0 m/s²"}}, {"id": 10, "topik": "Newton: gerak lurus (1)", "soal": "Bola dilempar vertikal ke atas dengan laju 20 m/s (g = 10 m/s², hambatan udara diabaikan). Tinggi maksimum bola adalah …", "opsi": {"A": "2 m", "B": "20 m", "C": "10 m", "D": "40 m", "E": "200 m"}}, {"id": 11, "topik": "Newton: gerak lurus (1)", "soal": "Sebuah bola dilempar vertikal ke atas (hambatan udara diabaikan). Pada titik tertinggi lintasannya, kecepatan v dan percepatan a bola adalah …", "opsi": {"A": "v = 0 dan a = 0", "B": "v = 0 dan a = g ke bawah", "C": "v maksimum dan a = 0", "D": "v = 0 dan a = g ke atas", "E": "v = g dan a = 0"}}, {"id": 12, "topik": "Newton: gerak lurus (2)", "soal": "Partikel 2,0 kg mula-mula diam dikenai gaya searah gerak F(t) = 6t (F dalam N, t dalam s). Kecepatan partikel pada t = 2,0 s adalah …", "opsi": {"A": "1,5 m/s", "B": "3 m/s", "C": "12 m/s", "D": "6 m/s", "E": "24 m/s"}}, {"id": 13, "topik": "Newton: gerak lurus (2)", "soal": "Untuk gaya yang berubah terhadap waktu, perubahan momentum benda sama dengan …", "opsi": {"A": "gradien grafik F terhadap t", "B": "gaya rata-rata dikali massa benda", "C": "luas daerah di bawah grafik F terhadap t", "D": "luas daerah di bawah grafik F terhadap x", "E": "gaya maksimum dikali selang waktu"}}, {"id": 14, "topik": "Newton: gerak lurus (2)", "soal": "Benda bermassa m jatuh di udara dengan gaya hambat linear F = −cv. Kecepatan terminalnya adalah …", "opsi": {"A": "mg/c", "B": "√(mg/c)", "C": "c/(mg)", "D": "mgc", "E": "g/c"}}, {"id": 15, "topik": "Newton: gerak lurus (2)", "soal": "Bola jatuh dengan hambatan kuadratik (F = c₂v²). Jika massanya dijadikan 4 kali dengan bentuk dan ukuran yang sama, kecepatan terminalnya menjadi …", "opsi": {"A": "tetap", "B": "4 kali semula", "C": "16 kali semula", "D": "2 kali semula", "E": "½ kali semula"}}, {"id": 16, "topik": "Newton: gerak lurus (2)", "soal": "Balok bermassa m meluncur di permukaan horizontal dengan laju awal v₀ dan hanya mengalami gaya hambat −cv. Waktu yang diperlukan agar lajunya menjadi setengah adalah …", "opsi": {"A": "m/(2c)", "B": "(m/c) ln 2", "C": "2m/c", "D": "(c/m) ln 2", "E": "tidak pernah, karena laju turun secara linear"}}, {"id": 17, "topik": "Newton: gerak lurus (2)", "soal": "Partikel mengalami gaya bergantung posisi F(x) = −4x³ (F dalam N, x dalam m). Dengan V(0) = 0, energi potensialnya adalah …", "opsi": {"A": "V(x) = −x⁴", "B": "V(x) = 4x⁴", "C": "V(x) = −12x²", "D": "V(x) = x⁴", "E": "V(x) = x³"}}, {"id": 18, "topik": "Newton: gerak lurus (2)", "soal": "Partikel bergerak dalam potensial V(x) = x⁴ (V dalam J, x dalam m) dengan energi total 16 J. Titik balik geraknya berada di …", "opsi": {"A": "x = ±1 m", "B": "x = ±4 m", "C": "x = ±2 m", "D": "x = ±16 m", "E": "x = ±√2 m"}}, {"id": 19, "topik": "Osilasi harmonik sederhana", "soal": "Beban 0,50 kg digantung pada pegas dengan k = 50 N/m. Periode osilasinya adalah …", "opsi": {"A": "0,63 s", "B": "0,10 s", "C": "0,31 s", "D": "1,0 s", "E": "6,3 s"}}, {"id": 20, "topik": "Osilasi harmonik sederhana", "soal": "Jika amplitudo osilator harmonik sederhana dijadikan dua kali, maka …", "opsi": {"A": "periodenya tetap dan energi totalnya menjadi 4 kali", "B": "periodenya 2 kali dan energi totalnya 2 kali", "C": "periodenya tetap dan energi totalnya 2 kali", "D": "periodenya ½ kali dan energi totalnya 4 kali", "E": "periodenya 2 kali dan energi totalnya 4 kali"}}, {"id": 21, "topik": "Osilasi harmonik sederhana", "soal": "Pada osilator harmonik dengan amplitudo A, perbandingan energi kinetik terhadap energi total saat simpangan x = A/2 adalah …", "opsi": {"A": "1/4", "B": "1/2", "C": "3/4", "D": "1/√2", "E": "1"}}, {"id": 22, "topik": "Osilasi harmonik sederhana", "soal": "Osilator harmonik memiliki amplitudo 0,10 m dan frekuensi sudut 10 rad/s. Percepatan maksimumnya adalah …", "opsi": {"A": "0,01 m/s²", "B": "10 m/s²", "C": "0,1 m/s²", "D": "1 m/s²", "E": "100 m/s²"}}, {"id": 23, "topik": "Osilasi harmonik sederhana", "soal": "Partikel bermassa 1,0 kg bergerak dalam potensial V(x) = x² − 2x + 5 (SI). Frekuensi sudut osilasi kecil di sekitar titik setimbangnya adalah …", "opsi": {"A": "1 rad/s", "B": "2 rad/s", "C": "4 rad/s", "D": "√5 rad/s", "E": "√2 rad/s"}}, {"id": 24, "topik": "Osilasi harmonik sederhana", "soal": "Rumus periode bandul T = 2π√(L/g) hanya berlaku untuk simpangan sudut kecil karena …", "opsi": {"A": "massa beban dianggap sangat kecil", "B": "tegangan tali dianggap nol", "C": "gesekan udara diabaikan", "D": "percepatan gravitasi berubah terhadap θ", "E": "pendekatan sin θ ≈ θ membuat gaya pemulihnya linear terhadap θ"}}, {"id": 25, "topik": "Osilasi harmonik sederhana", "soal": "Dua massa identik m masing-masing dihubungkan ke dinding dengan pegas k dan saling dihubungkan oleh pegas k′. Frekuensi kedua mode normalnya adalah …", "opsi": {"A": "ω₁ = √(k/m) dan ω₂ = √((k + k′)/m)", "B": "ω₁ = √(k′/m) dan ω₂ = √(2k/m)", "C": "ω₁ = ω₂ = √((k + k′)/m)", "D": "ω₁ = √(k/m) (sefase) dan ω₂ = √((k + 2k′)/m) (berlawanan fase)", "E": "ω₁ = √(2k/m) dan ω₂ = √((2k + k′)/m)"}}, {"id": 26, "topik": "Osilasi teredam", "soal": "Osilator m ẍ + c ẋ + kx = 0 mengalami redaman kritis bila …", "opsi": {"A": "c = √(km)", "B": "c = km", "C": "c = √(k/m)", "D": "c = 2km", "E": "c = 2√(km)"}}, {"id": 27, "topik": "Osilasi teredam", "soal": "Osilator dengan m = 1,0 kg, k = 16 N/m, dan c = 10 kg/s termasuk …", "opsi": {"A": "tidak teredam", "B": "teredam ringan (underdamped)", "C": "teredam kritis", "D": "teredam kuat (overdamped)", "E": "osilasi terpaksa"}}, {"id": 28, "topik": "Osilasi teredam", "soal": "Osilator teredam ringan memiliki ω₀ = 5 rad/s dan γ = c/2m = 3 s⁻¹. Frekuensi sudut osilasinya adalah …", "opsi": {"A": "4 rad/s", "B": "2 rad/s", "C": "3 rad/s", "D": "5 rad/s", "E": "8 rad/s"}}, {"id": 29, "topik": "Osilasi teredam", "soal": "Amplitudo osilator teredam ringan meluruh sebanding dengan e^(−γt), dengan γ = 0,5 s⁻¹. Waktu yang diperlukan agar amplitudo turun menjadi 1/e dari nilai awalnya adalah …", "opsi": {"A": "0,25 s", "B": "0,5 s", "C": "1 s", "D": "4 s", "E": "2 s"}}, {"id": 30, "topik": "Osilasi teredam", "soal": "Peredam kejut (shock absorber) mobil dirancang mendekati redaman kritis karena …", "opsi": {"A": "sistem kembali ke posisi setimbang paling cepat tanpa berosilasi", "B": "osilasinya berlangsung paling lama", "C": "frekuensi alaminya menjadi nol", "D": "energi mekaniknya kekal", "E": "amplitudonya bertambah terhadap waktu"}}, {"id": 31, "topik": "Osilasi terpaksa & resonansi", "soal": "Osilator tanpa redaman (m = 1,0 kg, ω₀ = 10 rad/s) dipaksa gaya F₀ cos ωt dengan F₀ = 15 N dan ω = 5 rad/s. Amplitudo keadaan tunaknya adalah …", "opsi": {"A": "0,10 m", "B": "0,60 m", "C": "1,5 m", "D": "3,0 m", "E": "0,20 m"}}, {"id": 32, "topik": "Osilasi terpaksa & resonansi", "soal": "Dalam keadaan tunak, osilator teredam yang dipaksa oleh gaya F₀ cos ωt bergetar dengan frekuensi …", "opsi": {"A": "ω₀, yaitu frekuensi alami", "B": "ω_d, yaitu frekuensi teredam", "C": "ω₀ − ω", "D": "ω, yaitu frekuensi gaya pemaksa", "E": "ω₀ + ω"}}, {"id": 33, "topik": "Osilasi terpaksa & resonansi", "soal": "Pada osilator terpaksa teredam yang dipaksa tepat pada ω = ω₀, …", "opsi": {"A": "simpangan sefase dengan gaya", "B": "simpangan tertinggal π/2 dari gaya, sedangkan kecepatan sefase dengan gaya", "C": "simpangan berlawanan fase dengan gaya", "D": "kecepatan tertinggal π dari gaya", "E": "beda fasenya bergantung pada amplitudo gaya"}}, {"id": 34, "topik": "Osilasi terpaksa & resonansi", "soal": "Kurva daya resonansi sebuah osilator berpuncak di f₀ = 200 Hz dengan lebar setengah daya Δf = 4,0 Hz. Faktor kualitasnya adalah …", "opsi": {"A": "4", "B": "50", "C": "200", "D": "800", "E": "0,02"}}, {"id": 35, "topik": "Osilasi terpaksa & resonansi", "soal": "Jika konstanta redaman sebuah osilator terpaksa diperbesar, kurva resonansi amplitudonya akan …", "opsi": {"A": "memiliki puncak yang lebih tinggi dan lebih sempit", "B": "berpuncak jauh di atas ω₀", "C": "tidak berubah; yang berubah hanya fasenya", "D": "bernilai nol untuk ω ≪ ω₀", "E": "memiliki puncak yang lebih rendah dan lebih lebar"}}, {"id": 36, "topik": "Gerak partikel 3D", "soal": "Gaya <b>F</b> = 2xy <b>i</b> + x² <b>j</b> adalah …", "opsi": {"A": "konservatif, dengan V = x²y", "B": "konservatif, dengan V = −x²y", "C": "konservatif, dengan V = −2xy", "D": "tidak konservatif karena ∇×F = 2x k", "E": "tidak konservatif karena bergantung pada dua koordinat"}}, {"id": 37, "topik": "Gerak partikel 3D", "soal": "Usaha yang dilakukan gaya konservatif pada partikel yang bergerak sepanjang lintasan tertutup adalah …", "opsi": {"A": "sama dengan energi kinetik awal", "B": "selalu positif", "C": "nol", "D": "bergantung pada bentuk lintasan", "E": "dua kali perubahan energi potensial"}}, {"id": 38, "topik": "Gerak partikel 3D", "soal": "Proyektil ditembakkan dengan laju 20 m/s pada sudut elevasi 30° di tanah datar (g = 10 m/s², hambatan udara diabaikan). Jarak tembaknya adalah …", "opsi": {"A": "17,3 m", "B": "20,0 m", "C": "34,6 m", "D": "40,0 m", "E": "69,3 m"}}, {"id": 39, "topik": "Gerak partikel 3D", "soal": "Dibandingkan dengan gerak tanpa hambatan, proyektil yang mengalami hambatan udara linear …", "opsi": {"A": "memiliki jarak tembak lebih pendek dan sudut optimum lebih kecil dari 45°", "B": "tetap berlintasan parabola yang simetris", "C": "memiliki jarak tembak lebih jauh", "D": "memiliki sudut optimum lebih besar dari 45°", "E": "memiliki komponen kecepatan horizontal yang tetap konstan"}}, {"id": 40, "topik": "Gerak partikel 3D", "soal": "Partikel bermuatan bergerak tegak lurus medan magnet seragam. Jika lajunya dijadikan dua kali, maka …", "opsi": {"A": "jari-jari tetap dan periodenya ½ kali", "B": "jari-jari dan periodenya sama-sama 2 kali", "C": "jari-jari lintasan menjadi 2 kali dan periodenya tetap", "D": "jari-jari 4 kali dan periodenya tetap", "E": "jari-jari ½ kali dan periodenya tetap"}}];
+</script>
+<script>
+(function(){
+const $ = id => document.getElementById(id);
+const LETTERS = ["A","B","C","D","E"];
+const store = {
+  get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } },
+  set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} },
+  del(k){ try { localStorage.removeItem(k); } catch(e){} }
+};
+const KEY_ACTIVE = CONFIG.EXAM_ID + ":aktif";
+const keyFor = nim => CONFIG.EXAM_ID + ":" + nim;
+
+/* seeded shuffle (deterministic per NIM, so reloading keeps the same order) */
+function hash(str){ let h = 1779033703 ^ str.length; for (let i=0;i<str.length;i++){ h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = h<<13 | h>>>19; } return h>>>0; }
+function rng(seed){ return function(){ seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed>>>15, 1 | seed); t = t + Math.imul(t ^ t>>>7, 61 | t) ^ t; return ((t ^ t>>>14) >>> 0) / 4294967296; }; }
+function shuffle(arr, r){ const a = arr.slice(); for (let i=a.length-1;i>0;i--){ const j = Math.floor(r()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+let S = null;      // exam state
+let cur = 0;       // current display index
+let tick = null;
+
+/* ---------- start screen ---------- */
+$("tJudul").textContent = CONFIG.JUDUL;
+$("tKet").textContent = CONFIG.KETERANGAN;
+$("tDur").textContent = CONFIG.DURASI_MENIT;
+if (CONFIG.TOKEN) $("tokenWrap").classList.remove("hide");
+if (!CONFIG.SCRIPT_URL) $("cfgWarn").classList.remove("hide");
+$("kelasWrap").innerHTML = CONFIG.KELAS && CONFIG.KELAS.length
+  ? '<select id="iKelas" required><option value="">— pilih —</option>' + CONFIG.KELAS.map(k=>`<option>${esc(k)}</option>`).join("") + "</select>"
+  : '<input id="iKelas" required maxlength="20">';
+
+function newState(nama, nim, kelas){
+  const r = rng(hash(CONFIG.EXAM_ID + "|" + nim));
+  const ids = SOAL.map(q => q.id);
+  const order = CONFIG.ACAK_SOAL ? shuffle(ids, r) : ids;
+  const optOrder = {};
+  SOAL.forEach(q => { optOrder[q.id] = CONFIG.ACAK_OPSI ? shuffle(LETTERS, r) : LETTERS.slice(); });
+  const now = Date.now();
+  return { v:1, subId: uid(), nama, nim, kelas, order, optOrder, jawab:{}, ragu:{},
+           mulai: now, akhir: now + CONFIG.DURASI_MENIT*60000, pindahTab: 0, terkirim: false, cur: 0 };
+}
+function save(){ if (S){ S.cur = cur; store.set(keyFor(S.nim), S); } }
+
+$("fStart").addEventListener("submit", ev => {
+  ev.preventDefault();
+  const nama = $("iNama").value.trim().replace(/\s+/g," ");
+  const nim = $("iNim").value.trim().replace(/\s+/g,"");
+  const kelas = $("iKelas").value.trim();
+  const err = $("startErr");
+  if (nama.length < 3) return err.textContent = "Nama belum diisi dengan benar.";
+  if (!/^[0-9A-Za-z.\-]{4,20}$/.test(nim)) return err.textContent = "NIM belum valid.";
+  if (!kelas) return err.textContent = "Pilih atau isi kelas.";
+  if (CONFIG.TOKEN && $("iToken").value.trim().toUpperCase() !== CONFIG.TOKEN.toUpperCase()) return err.textContent = "Token ujian salah.";
+  const saved = store.get(keyFor(nim));
+  if (saved && saved.terkirim){ S = saved; return showEnd(true); }
+  S = (saved && saved.v === 1) ? saved : newState(nama, nim, kelas);
+  if (!saved){ S.nama = nama; S.kelas = kelas; }
+  store.set(KEY_ACTIVE, nim);
+  cur = S.cur || 0;
+  save(); startExam();
+});
+
+/* resume automatically after an accidental reload */
+function resume(){
+  const nim = store.get(KEY_ACTIVE); if (!nim) return;
+  const saved = store.get(keyFor(nim)); if (!saved) return;
+  S = saved; cur = S.cur || 0;
+  if (S.terkirim){ store.del(KEY_ACTIVE); S = null; return; }   // perangkat dipakai bergantian: kembali ke layar masuk
+  if (S.kirimGagal) return showEnd(false);
+  startExam();
+}
+
+/* ---------- exam ---------- */
+const QMAP = Object.fromEntries(SOAL.map(q => [q.id, q]));
+function startExam(){
+  $("scrStart").classList.add("hide"); $("scrEnd").classList.add("hide"); $("scrExam").classList.remove("hide");
+  $("hNama").textContent = S.nama;
+  $("hInfo").textContent = "NIM " + S.nim + " · Kelas " + S.kelas;
+  buildGrid(); render(); updateTimer();
+  clearInterval(tick); tick = setInterval(updateTimer, 500);
+  window.addEventListener("beforeunload", warnUnload);
+  document.addEventListener("visibilitychange", onVis);
+}
+function warnUnload(e){ if (S && !S.terkirim){ e.preventDefault(); e.returnValue = ""; } }
+function onVis(){
+  if (document.hidden && S && !S.terkirim && $("scrExam").offsetParent !== null){
+    S.pindahTab++; save(); $("tabWarn").textContent = "Tercatat berpindah tab/aplikasi: " + S.pindahTab + " kali.";
+  }
+}
+function buildGrid(){
+  const g = $("navGrid"); g.innerHTML = "";
+  S.order.forEach((id, k) => {
+    const b = document.createElement("button"); b.textContent = k+1; b.type = "button";
+    b.setAttribute("aria-label", "Soal " + (k+1));
+    b.onclick = () => { cur = k; save(); render(); window.scrollTo({top:0, behavior:"smooth"}); };
+    g.appendChild(b);
+  });
+  if (S.pindahTab) $("tabWarn").textContent = "Tercatat berpindah tab/aplikasi: " + S.pindahTab + " kali.";
+}
+function render(){
+  const id = S.order[cur], q = QMAP[id];
+  $("qNo").textContent = "Soal " + (cur+1) + " dari " + S.order.length;
+  $("qTopic").textContent = q.topik;
+  $("qStem").innerHTML = q.soal;
+  const box = $("qOpts"); box.innerHTML = "";
+  S.optOrder[id].forEach((orig, k) => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "opt" + (S.jawab[id] === orig ? " on" : "");
+    b.dataset.letter = orig; b.setAttribute("role","radio"); b.setAttribute("aria-checked", S.jawab[id] === orig);
+    b.innerHTML = `<span class="L">${LETTERS[k]}</span><span>${q.opsi[orig]}</span>`;
+    b.onclick = () => {
+      if (S.jawab[id] === orig) delete S.jawab[id]; else S.jawab[id] = orig;   // klik lagi untuk membatalkan
+      save(); render();
+    };
+    box.appendChild(b);
+  });
+  $("cFlag").checked = !!S.ragu[id];
+  $("bPrev").disabled = cur === 0;
+  $("bNext").textContent = cur === S.order.length-1 ? "Selesai ✓" : "Berikutnya →";
+  [...$("navGrid").children].forEach((b, k) => {
+    const qid = S.order[k];
+    b.className = (S.ragu[qid] ? "flg" : S.jawab[qid] ? "ans" : "") + (k === cur ? " cur" : "");
+  });
+  const n = Object.keys(S.jawab).length;
+  $("hProg").textContent = n + "/" + S.order.length + " terjawab";
+  $("hBar").style.width = (100*n/S.order.length) + "%";
+}
+$("cFlag").onchange = e => { const id = S.order[cur]; if (e.target.checked) S.ragu[id] = true; else delete S.ragu[id]; save(); render(); };
+$("bPrev").onclick = () => { if (cur>0){ cur--; save(); render(); window.scrollTo({top:0,behavior:"smooth"}); } };
+$("bNext").onclick = () => { if (cur < S.order.length-1){ cur++; save(); render(); window.scrollTo({top:0,behavior:"smooth"}); } else askSubmit(); };
+document.addEventListener("keydown", e => {
+  if ($("scrExam").classList.contains("hide") || !$("mConfirm").classList.contains("hide")) return;
+  if (["INPUT","SELECT","TEXTAREA"].includes(document.activeElement.tagName)) return;
+  if (e.key === "ArrowRight") $("bNext").click();
+  if (e.key === "ArrowLeft") $("bPrev").click();
+  const k = "abcde".indexOf(e.key.toLowerCase()); if (k >= 0) $("qOpts").children[k].click();
+});
+
+function updateTimer(){
+  const left = Math.max(0, S.akhir - Date.now());
+  const m = Math.floor(left/60000), s = Math.floor(left/1000)%60;
+  const t = $("hTimer"); t.textContent = String(m).padStart(2,"0") + ":" + String(s).padStart(2,"0");
+  t.className = "timer" + (left < 60000 ? " crit" : left < 5*60000 ? " warn" : "");
+  if (left <= 0 && !S.terkirim && !S.sedangKirim){ $("mConfirm").classList.add("hide"); submit("waktu habis"); }
+}
+
+/* ---------- submit ---------- */
+function askSubmit(){
+  const n = Object.keys(S.jawab).length, empty = S.order.length - n, flg = Object.keys(S.ragu).length;
+  $("mText").innerHTML = `Terjawab <b>${n}</b> dari ${S.order.length} soal.` +
+    (empty ? ` <b style="color:var(--danger)">${empty} soal belum dijawab.</b>` : "") +
+    (flg ? ` ${flg} soal masih ditandai ragu-ragu.` : "");
+  $("mConfirm").classList.remove("hide");
+}
+$("bSubmit").onclick = askSubmit;
+$("mNo").onclick = () => $("mConfirm").classList.add("hide");
+$("mYes").onclick = () => { $("mConfirm").classList.add("hide"); submit("dikumpulkan"); };
+
+function payload(){
+  const jawaban = {};
+  SOAL.forEach(q => { jawaban[q.id] = S.jawab[q.id] || ""; });
+  return { subId:S.subId, examId:CONFIG.EXAM_ID, nama:S.nama, nim:S.nim, kelas:S.kelas,
+           mulai:new Date(S.mulai).toISOString(), selesai:new Date(S.selesai || Date.now()).toISOString(),
+           durasiMenit: Math.round(((S.selesai || Date.now()) - S.mulai)/600)/100,
+           pindahTab:S.pindahTab, alasan:S.alasan || "", ragu:Object.keys(S.ragu).join(","),
+           urutan:S.order.join(","), jawaban, userAgent:navigator.userAgent.slice(0,180) };
+}
+async function submit(alasan){
+  if (S.sedangKirim) return;
+  S.sedangKirim = true;
+  if (!S.selesai){ S.selesai = Date.now(); S.alasan = alasan; }
+  save(); clearInterval(tick);
+  showEnd(null);
+  const ok = await send(payload());
+  S.sedangKirim = false;
+  if (ok){ S.terkirim = true; S.kirimGagal = false; } else S.kirimGagal = true;
+  save(); showEnd(ok);
+}
+async function send(data){
+  if (!CONFIG.SCRIPT_URL){ await new Promise(r=>setTimeout(r,600)); return "demo"; }
+  const body = JSON.stringify(data);
+  try {   // 1) normal request: lets us read the server's confirmation
+    const res = await fetch(CONFIG.SCRIPT_URL, { method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body, redirect:"follow" });
+    const j = await res.json();
+    if (j && j.ok) return "confirmed";
+    throw new Error(j && j.error || "respon tidak valid");
+  } catch(e1){
+    try { // 2) fallback without reading the response (server de-duplicates by subId)
+      await fetch(CONFIG.SCRIPT_URL, { method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body });
+      return "sent";
+    } catch(e2){ return false; }
+  }
+}
+function showEnd(ok){
+  $("scrStart").classList.add("hide"); $("scrExam").classList.add("hide"); $("scrEnd").classList.remove("hide");
+  window.removeEventListener("beforeunload", warnUnload);
+  const n = Object.keys(S.jawab).length;
+  $("sAns").textContent = n; $("sEmpty").textContent = S.order.length - n;
+  $("sDur").textContent = Math.round(((S.selesai || Date.now()) - S.mulai)/60000);
+  $("eSub").textContent = S.nama + " · NIM " + S.nim + " · Kelas " + S.kelas + (S.alasan === "waktu habis" ? " · dikirim otomatis karena waktu habis" : "");
+  $("bRetry").classList.add("hide"); $("bBackup").classList.add("hide"); $("bHome").classList.add("hide");
+  if (ok === null){ $("eTitle").textContent = "Mengirim jawaban…"; $("eStatus").innerHTML = '<span class="spinner"></span>Jangan tutup halaman ini.'; return; }
+  if (ok === "demo"){ $("eTitle").textContent = "Mode uji coba"; $("eStatus").textContent = "SCRIPT_URL belum diisi, jadi jawaban tidak dikirim. Unduh berkas cadangan untuk melihat data yang akan dikirim."; $("bBackup").classList.remove("hide"); $("bHome").classList.remove("hide"); return; }
+  if (ok){
+    $("eTitle").textContent = "Jawaban berhasil dikumpulkan";
+    $("eStatus").innerHTML = '<span class="ok">✓ Terkirim</span>' + (ok === "sent" ? " (konfirmasi server tidak dapat dibaca browser; data tetap diterima bila koneksi lancar)." : " dan tercatat di server.") +
+      " Kode kiriman: <code>" + esc(S.subId) + "</code>. Halaman ini boleh ditutup.";
+    $("bBackup").classList.remove("hide"); $("bHome").classList.remove("hide");
+    return;
+  }
+  $("eTitle").textContent = "Jawaban belum terkirim";
+  $("eStatus").innerHTML = "Koneksi gagal. Jawaban Anda <b>aman tersimpan</b> di perangkat ini. Periksa internet lalu tekan <b>Kirim ulang</b>. Bila tetap gagal, unduh berkas cadangan dan serahkan kepada pengawas.";
+  $("bRetry").classList.remove("hide"); $("bBackup").classList.remove("hide");
+}
+$("bRetry").onclick = () => submit(S.alasan);
+$("bHome").onclick = () => { store.del(KEY_ACTIVE); location.reload(); };
+$("bBackup").onclick = () => {
+  const blob = new Blob([JSON.stringify(payload(), null, 2)], {type:"application/json"});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = CONFIG.EXAM_ID + "_" + S.nim + ".json"; document.body.appendChild(a); a.click(); a.remove();
+};
+resume();   // lanjutkan otomatis bila halaman sempat tertutup/dimuat ulang
+})();
+</script>
+</body>
+</html>
